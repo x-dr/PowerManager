@@ -21,6 +21,9 @@ class SettingsRepository(private val context: Context) {
         AppSettings(
             monitorEnabled = p[Keys.MONITOR_ENABLED] ?: true,
             persistentNotificationEnabled = p[Keys.PERSISTENT_NOTIFICATION_ENABLED] ?: false,
+            chargingNotifyEnabled = p[Keys.CHARGING_NOTIFY_ENABLED] ?: true,
+            fullChargeNotifyEnabled = p[Keys.FULL_CHARGE_NOTIFY_ENABLED] ?: true,
+            fullChargeThreshold = p[Keys.FULL_CHARGE_THRESHOLD] ?: 100,
             deviceName = p[Keys.DEVICE_NAME] ?: "Android Device",
             lowThreshold = p[Keys.LOW_THRESHOLD] ?: 20,
             criticalThreshold = p[Keys.CRITICAL_THRESHOLD] ?: 10,
@@ -42,7 +45,11 @@ class SettingsRepository(private val context: Context) {
             lastLowNotifyAt = p[Keys.LAST_LOW_NOTIFY_AT] ?: 0L,
             lastCriticalNotifyAt = p[Keys.LAST_CRITICAL_NOTIFY_AT] ?: 0L,
             lastDangerNotifyAt = p[Keys.LAST_DANGER_NOTIFY_AT] ?: 0L,
-            lastRecoverNotifyAt = p[Keys.LAST_RECOVER_NOTIFY_AT] ?: 0L
+            lastRecoverNotifyAt = p[Keys.LAST_RECOVER_NOTIFY_AT] ?: 0L,
+            lastChargingNotifyAt = p[Keys.LAST_CHARGING_NOTIFY_AT] ?: 0L,
+            lastFullChargeNotifyAt = p[Keys.LAST_FULL_CHARGE_NOTIFY_AT] ?: 0L,
+            lastPlugged = p[Keys.LAST_PLUGGED] ?: false,
+            lastFullChargeReached = p[Keys.LAST_FULL_CHARGE_REACHED] ?: false
         )
     }
 
@@ -52,6 +59,9 @@ class SettingsRepository(private val context: Context) {
         context.powerSettingsDataStore.edit { p ->
             p[Keys.MONITOR_ENABLED] = settings.monitorEnabled
             p[Keys.PERSISTENT_NOTIFICATION_ENABLED] = settings.persistentNotificationEnabled
+            p[Keys.CHARGING_NOTIFY_ENABLED] = settings.chargingNotifyEnabled
+            p[Keys.FULL_CHARGE_NOTIFY_ENABLED] = settings.fullChargeNotifyEnabled
+            p[Keys.FULL_CHARGE_THRESHOLD] = settings.fullChargeThreshold
             p[Keys.DEVICE_NAME] = settings.deviceName
             p[Keys.LOW_THRESHOLD] = settings.lowThreshold
             p[Keys.CRITICAL_THRESHOLD] = settings.criticalThreshold
@@ -88,6 +98,13 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun updateBatteryRuntimeState(plugged: Boolean, fullChargeReached: Boolean) {
+        context.powerSettingsDataStore.edit { p ->
+            p[Keys.LAST_PLUGGED] = plugged
+            p[Keys.LAST_FULL_CHARGE_REACHED] = fullChargeReached
+        }
+    }
+
     suspend fun updateNotifyState(state: BatteryLevelState, now: Long = System.currentTimeMillis()) {
         context.powerSettingsDataStore.edit { p ->
             p[Keys.LAST_STATE] = state.name
@@ -97,6 +114,8 @@ class SettingsRepository(private val context: Context) {
                 BatteryLevelState.CRITICAL -> p[Keys.LAST_CRITICAL_NOTIFY_AT] = now
                 BatteryLevelState.DANGER -> p[Keys.LAST_DANGER_NOTIFY_AT] = now
                 BatteryLevelState.RECOVERED -> p[Keys.LAST_RECOVER_NOTIFY_AT] = now
+                BatteryLevelState.CHARGING -> p[Keys.LAST_CHARGING_NOTIFY_AT] = now
+                BatteryLevelState.FULL_CHARGE -> p[Keys.LAST_FULL_CHARGE_NOTIFY_AT] = now
                 BatteryLevelState.NORMAL -> Unit
             }
         }
@@ -109,6 +128,9 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val MONITOR_ENABLED = booleanPreferencesKey("monitor_enabled")
         val PERSISTENT_NOTIFICATION_ENABLED = booleanPreferencesKey("persistent_notification_enabled")
+        val CHARGING_NOTIFY_ENABLED = booleanPreferencesKey("charging_notify_enabled")
+        val FULL_CHARGE_NOTIFY_ENABLED = booleanPreferencesKey("full_charge_notify_enabled")
+        val FULL_CHARGE_THRESHOLD = intPreferencesKey("full_charge_threshold")
         val DEVICE_NAME = stringPreferencesKey("device_name")
         val LOW_THRESHOLD = intPreferencesKey("low_threshold")
         val CRITICAL_THRESHOLD = intPreferencesKey("critical_threshold")
@@ -131,5 +153,9 @@ class SettingsRepository(private val context: Context) {
         val LAST_CRITICAL_NOTIFY_AT = longPreferencesKey("last_critical_notify_at")
         val LAST_DANGER_NOTIFY_AT = longPreferencesKey("last_danger_notify_at")
         val LAST_RECOVER_NOTIFY_AT = longPreferencesKey("last_recover_notify_at")
+        val LAST_CHARGING_NOTIFY_AT = longPreferencesKey("last_charging_notify_at")
+        val LAST_FULL_CHARGE_NOTIFY_AT = longPreferencesKey("last_full_charge_notify_at")
+        val LAST_PLUGGED = booleanPreferencesKey("last_plugged")
+        val LAST_FULL_CHARGE_REACHED = booleanPreferencesKey("last_full_charge_reached")
     }
 }

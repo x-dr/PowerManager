@@ -3,6 +3,8 @@ package cn.tryxd.powermanager.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import cn.tryxd.powermanager.data.SettingsRepository
+import cn.tryxd.powermanager.service.BatteryForegroundService
 import cn.tryxd.powermanager.worker.BatteryCheckWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,8 +17,15 @@ class BootReceiver : BroadcastReceiver() {
             val pendingResult = goAsync()
             CoroutineScope(Dispatchers.Default).launch {
                 runCatching {
-                    BatteryCheckWorker.start(context.applicationContext)
-                    BatteryCheckWorker.checkNow(context.applicationContext)
+                    val appContext = context.applicationContext
+                    val settings = SettingsRepository(appContext).getSettings()
+                    if (settings.monitorEnabled) {
+                        BatteryCheckWorker.start(appContext)
+                        BatteryCheckWorker.checkNow(appContext)
+                    }
+                    if (settings.persistentNotificationEnabled) {
+                        BatteryForegroundService.start(appContext)
+                    }
                 }
                 pendingResult.finish()
             }

@@ -3,6 +3,9 @@ package cn.tryxd.powermanager.model
 data class AppSettings(
     val monitorEnabled: Boolean = true,
     val persistentNotificationEnabled: Boolean = false,
+    val chargingNotifyEnabled: Boolean = true,
+    val fullChargeNotifyEnabled: Boolean = true,
+    val fullChargeThreshold: Int = 100,
     val deviceName: String = "Android Device",
     val lowThreshold: Int = 20,
     val criticalThreshold: Int = 10,
@@ -24,7 +27,11 @@ data class AppSettings(
     val lastLowNotifyAt: Long = 0L,
     val lastCriticalNotifyAt: Long = 0L,
     val lastDangerNotifyAt: Long = 0L,
-    val lastRecoverNotifyAt: Long = 0L
+    val lastRecoverNotifyAt: Long = 0L,
+    val lastChargingNotifyAt: Long = 0L,
+    val lastFullChargeNotifyAt: Long = 0L,
+    val lastPlugged: Boolean = false,
+    val lastFullChargeReached: Boolean = false
 )
 
 data class BatterySnapshot(
@@ -47,5 +54,7 @@ enum class BatteryLevelState {
     LOW,
     CRITICAL,
     DANGER,
-    RECOVERED
+    RECOVERED,
+    CHARGING,
+    FULL_CHARGE
 }

@@ -12,6 +12,7 @@ import android.os.IBinder
 import cn.tryxd.powermanager.MainActivity
 import cn.tryxd.powermanager.data.SettingsRepository
 import cn.tryxd.powermanager.monitor.BatteryReader
+import cn.tryxd.powermanager.worker.BatteryAlertProcessor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -56,6 +57,7 @@ class BatteryForegroundService : Service() {
         if (refreshJob?.isActive == true) return
         refreshJob = scope.launch {
             while (isActive) {
+                BatteryAlertProcessor.process(applicationContext, markChecked = true)
                 refreshNotification()
                 delay(60_000L)
             }
@@ -76,9 +78,13 @@ class BatteryForegroundService : Service() {
             title = "电量读取失败"
             content = "${settings.deviceName} · 常驻监控运行中"
         } else {
-            val charging = if (snapshot.charging) "充电中" else "未充电"
+            val charging = when {
+                snapshot.charging -> "充电中"
+                snapshot.plugged -> "已接入电源"
+                else -> "未充电"
+            }
             title = "${settings.deviceName} · ${snapshot.percent}%"
-            content = "$charging · 低电量阈值 ${settings.lowThreshold}% · 每分钟刷新"
+            content = "$charging · 满电阈值 ${settings.fullChargeThreshold}% · 每分钟刷新"
         }
 
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

@@ -9,6 +9,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Debug APK
@@ -38,9 +41,34 @@ jobs:
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace --info
 
-      - name: Upload debug APK
+      - name: Prepare APK
+        if: success()
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk release/PowerManager-debug-${{ github.run_number }}.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release/PowerManager-debug-latest.apk
+
+      - name: Upload debug APK artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: PowerManager-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload APK to GitHub Releases
+        if: github.event_name != 'pull_request' && success()
+        uses: ncipollo/release-action@v1
+        with:
+          tag: debug-latest
+          name: PowerManager Debug Latest
+          body: |
+            自动构建的 PowerManager debug APK。
+
+            Commit: ${{ github.sha }}
+            Run: ${{ github.run_number }}
+          artifacts: release/*.apk
+          allowUpdates: true
+          replacesArtifacts: true
+          removeArtifacts: true
+          prerelease: true
+          makeLatest: true

@@ -15,7 +15,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import cn.tryxd.powermanager.data.SettingsRepository
-import cn.tryxd.powermanager.model.AppSettings
 import cn.tryxd.powermanager.model.BatteryLevelState
 import cn.tryxd.powermanager.monitor.BatteryReader
 import cn.tryxd.powermanager.notifier.NotifyDispatcher
@@ -96,11 +95,13 @@ class MainActivity : Activity() {
         cooldownMinutes = editText("通知冷却分钟，例如 60", InputType.TYPE_CLASS_NUMBER)
 
         addSection(root, "监控设置")
-        listOf(deviceName, lowThreshold, criticalThreshold, dangerThreshold, recoverThreshold, cooldownMinutes).forEach(root::addView)
+        listOf(deviceName, lowThreshold, criticalThreshold, dangerThreshold, recoverThreshold, cooldownMinutes).forEach {
+            root.addView(it)
+        }
 
         addSection(root, "Bark")
         barkEnabled = checkBox("启用 Bark")
-        barkServer = editText("Bark 服务地址，默认 https://api.day.app", InputType.TYPE_TEXT_VARIATION_URI)
+        barkServer = editText("Bark 服务地址，默认 https://api.day.app", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         barkKey = editText("Bark Key", InputType.TYPE_CLASS_TEXT)
         root.addView(barkEnabled)
         root.addView(barkServer)
@@ -116,7 +117,7 @@ class MainActivity : Activity() {
 
         addSection(root, "Webhook")
         webhookEnabled = checkBox("启用 Webhook")
-        webhookUrl = editText("Webhook URL", InputType.TYPE_TEXT_VARIATION_URI)
+        webhookUrl = editText("Webhook URL", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         root.addView(webhookEnabled)
         root.addView(webhookUrl)
 
@@ -139,7 +140,9 @@ class MainActivity : Activity() {
             refreshStatus()
         }
 
-        listOf(saveButton, checkButton, testButton, stopButton, refreshButton).forEach(root::addView)
+        listOf(saveButton, checkButton, testButton, stopButton, refreshButton).forEach {
+            root.addView(it)
+        }
         root.addView(note())
         return scrollView
     }

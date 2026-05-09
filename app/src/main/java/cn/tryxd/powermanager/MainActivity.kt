@@ -24,6 +24,7 @@ import cn.tryxd.powermanager.model.BatteryLevelState
 import cn.tryxd.powermanager.monitor.BatteryReader
 import cn.tryxd.powermanager.notifier.NotifyDispatcher
 import cn.tryxd.powermanager.rule.BatteryRuleEngine
+import cn.tryxd.powermanager.service.BatteryForegroundService
 import cn.tryxd.powermanager.worker.BatteryCheckWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,6 +45,7 @@ class MainActivity : Activity() {
     private lateinit var statusView: TextView
 
     private lateinit var monitorEnabled: CheckBox
+    private lateinit var persistentNotificationEnabled: CheckBox
     private lateinit var localNotifyEnabled: CheckBox
     private lateinit var barkEnabled: CheckBox
     private lateinit var telegramEnabled: CheckBox
@@ -90,7 +92,8 @@ class MainActivity : Activity() {
         root.addView(statusCard())
 
         monitorEnabled = checkBox("启用后台监控", "低频后台检查，默认 15 分钟一次")
-        localNotifyEnabled = checkBox("启用本机通知", "在手机本机弹出通知")
+        persistentNotificationEnabled = checkBox("启用常驻通知栏", "通知栏实时显示电量，可降低系统清理概率")
+        localNotifyEnabled = checkBox("启用本机通知", "在手机本机弹出低电量提醒")
 
         deviceName = editText("Android Device", InputType.TYPE_CLASS_TEXT)
         lowThreshold = editText("20", InputType.TYPE_CLASS_NUMBER)
@@ -99,11 +102,12 @@ class MainActivity : Activity() {
         recoverThreshold = editText("30", InputType.TYPE_CLASS_NUMBER)
         cooldownMinutes = editText("60", InputType.TYPE_CLASS_NUMBER)
 
-        root.addView(card("监控设置", "配置电量阈值、防重复通知和设备名称") {
+        root.addView(card("监控设置", "配置电量阈值、常驻通知和设备名称") {
             addView(monitorEnabled)
+            addView(persistentNotificationEnabled)
             addView(localNotifyEnabled)
             addDivider(this)
-            addField(this, "设备名称", "推送里显示的设备名", deviceName)
+            addField(this, "设备名称", "推送和常驻通知里显示的设备名", deviceName)
             addTwoColumns(
                 leftLabel = "低电量",
                 leftDesc = "触发普通提醒",
@@ -162,6 +166,9 @@ class MainActivity : Activity() {
             addView(actionButton("刷新状态", "#F1F5F9", "#334155") {
                 refreshStatus()
             })
+            addView(actionButton("停止常驻通知栏", "#FFF7ED", "#C2410C") {
+                stopPersistentNotification()
+            })
             addView(actionButton("停止后台监控", "#FEF2F2", "#B91C1C") {
                 BatteryCheckWorker.stop(applicationContext)
                 toast("已停止后台监控")
@@ -176,6 +183,7 @@ class MainActivity : Activity() {
         scope.launch {
             val settings = repository.getSettings()
             monitorEnabled.isChecked = settings.monitorEnabled
+            persistentNotificationEnabled.isChecked = settings.persistentNotificationEnabled
             localNotifyEnabled.isChecked = settings.localNotifyEnabled
             barkEnabled.isChecked = settings.barkEnabled
             telegramEnabled.isChecked = settings.telegramEnabled
@@ -200,6 +208,7 @@ class MainActivity : Activity() {
             val old = repository.getSettings()
             val settings = old.copy(
                 monitorEnabled = monitorEnabled.isChecked,
+                persistentNotificationEnabled = persistentNotificationEnabled.isChecked,
                 localNotifyEnabled = localNotifyEnabled.isChecked,
                 deviceName = deviceName.text.toString().trim().ifBlank { "Android Device" },
                 lowThreshold = lowThreshold.intValue(20).coerceIn(1, 100),
@@ -221,9 +230,24 @@ class MainActivity : Activity() {
                 BatteryCheckWorker.start(applicationContext)
                 BatteryCheckWorker.checkNow(applicationContext)
             }
+            if (settings.persistentNotificationEnabled) {
+                BatteryForegroundService.start(applicationContext)
+            } else {
+                BatteryForegroundService.stop(applicationContext)
+            }
             toast("设置已保存")
             refreshStatus()
             afterSaved?.invoke()
+        }
+    }
+
+    private fun stopPersistentNotification() {
+        scope.launch {
+            repository.setPersistentNotificationEnabled(false)
+            persistentNotificationEnabled.isChecked = false
+            BatteryForegroundService.stop(applicationContext)
+            toast("已停止常驻通知栏")
+            refreshStatus()
         }
     }
 
@@ -242,7 +266,8 @@ class MainActivity : Activity() {
                 batteryPercentView.setTextColor(batteryColor(snapshot.percent))
             }
             statusView.text = buildString {
-                appendLine("监控状态：${if (settings.monitorEnabled) "已启用" else "未启用"}")
+                appendLine("后台监控：${if (settings.monitorEnabled) "已启用" else "未启用"}")
+                appendLine("常驻通知：${if (settings.persistentNotificationEnabled) "已启用" else "未启用"}")
                 appendLine("上次检查：${formatTime(settings.lastCheckAt)}")
                 appendLine("上次通知：${formatTime(settings.lastNotifyAt)}")
                 appendLine("上次状态：${settings.lastState}")
@@ -459,7 +484,7 @@ class MainActivity : Activity() {
 
     private fun note(): TextView {
         return TextView(this).apply {
-            text = "提示：WorkManager 最短周期为 15 分钟。国产 ROM 建议手动允许自启动、后台运行、忽略电池优化和通知权限。"
+            text = "提示：常驻通知栏需要通知权限；WorkManager 最短周期为 15 分钟。国产 ROM 建议手动允许自启动、后台运行、忽略电池优化和通知权限。"
             textSize = 13f
             setTextColor(color("#64748B"))
             background = rounded("#EEF2FF", 18, "#C7D2FE")

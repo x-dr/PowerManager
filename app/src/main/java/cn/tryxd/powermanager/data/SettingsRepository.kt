@@ -20,6 +20,7 @@ class SettingsRepository(private val context: Context) {
     val settingsFlow: Flow<AppSettings> = context.powerSettingsDataStore.data.map { p ->
         AppSettings(
             monitorEnabled = p[Keys.MONITOR_ENABLED] ?: true,
+            persistentNotificationEnabled = p[Keys.PERSISTENT_NOTIFICATION_ENABLED] ?: false,
             deviceName = p[Keys.DEVICE_NAME] ?: "Android Device",
             lowThreshold = p[Keys.LOW_THRESHOLD] ?: 20,
             criticalThreshold = p[Keys.CRITICAL_THRESHOLD] ?: 10,
@@ -50,6 +51,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun saveSettings(settings: AppSettings) {
         context.powerSettingsDataStore.edit { p ->
             p[Keys.MONITOR_ENABLED] = settings.monitorEnabled
+            p[Keys.PERSISTENT_NOTIFICATION_ENABLED] = settings.persistentNotificationEnabled
             p[Keys.DEVICE_NAME] = settings.deviceName
             p[Keys.LOW_THRESHOLD] = settings.lowThreshold
             p[Keys.CRITICAL_THRESHOLD] = settings.criticalThreshold
@@ -65,6 +67,12 @@ class SettingsRepository(private val context: Context) {
             p[Keys.TELEGRAM_CHAT_ID] = settings.telegramChatId
             p[Keys.WEBHOOK_ENABLED] = settings.webhookEnabled
             p[Keys.WEBHOOK_URL] = settings.webhookUrl
+        }
+    }
+
+    suspend fun setPersistentNotificationEnabled(enabled: Boolean) {
+        context.powerSettingsDataStore.edit { p ->
+            p[Keys.PERSISTENT_NOTIFICATION_ENABLED] = enabled
         }
     }
 
@@ -100,6 +108,7 @@ class SettingsRepository(private val context: Context) {
 
     private object Keys {
         val MONITOR_ENABLED = booleanPreferencesKey("monitor_enabled")
+        val PERSISTENT_NOTIFICATION_ENABLED = booleanPreferencesKey("persistent_notification_enabled")
         val DEVICE_NAME = stringPreferencesKey("device_name")
         val LOW_THRESHOLD = intPreferencesKey("low_threshold")
         val CRITICAL_THRESHOLD = intPreferencesKey("critical_threshold")

@@ -29,6 +29,8 @@ object BatteryRuleEngine {
             BatteryLevelState.CRITICAL -> settings.lastCriticalNotifyAt
             BatteryLevelState.DANGER -> settings.lastDangerNotifyAt
             BatteryLevelState.RECOVERED -> settings.lastRecoverNotifyAt
+            BatteryLevelState.CHARGING -> settings.lastChargingNotifyAt
+            BatteryLevelState.FULL_CHARGE -> settings.lastFullChargeNotifyAt
             BatteryLevelState.NORMAL -> settings.lastNotifyAt
         }
         return now - lastAt >= cooldownMs
@@ -40,12 +42,18 @@ object BatteryRuleEngine {
             BatteryLevelState.CRITICAL -> "设备电量严重不足"
             BatteryLevelState.DANGER -> "设备即将关机"
             BatteryLevelState.RECOVERED -> "设备电量已恢复"
+            BatteryLevelState.CHARGING -> "设备开始充电"
+            BatteryLevelState.FULL_CHARGE -> "设备电量已充满"
             BatteryLevelState.NORMAL -> "设备电量正常"
         }
-        val chargingText = if (snapshot.charging) "充电中" else "未充电"
+        val chargingText = when {
+            snapshot.charging -> "充电中"
+            snapshot.plugged -> "已接入电源"
+            else -> "未充电"
+        }
         val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(snapshot.timestamp))
         val temp = snapshot.temperatureCelsius?.let { "\n电池温度：${String.format(Locale.getDefault(), "%.1f", it)}℃" } ?: ""
-        val body = "设备：${settings.deviceName}\n当前电量：${snapshot.percent}%\n充电状态：$chargingText\n时间：$time\n低电量阈值：${settings.lowThreshold}%$temp"
+        val body = "设备：${settings.deviceName}\n当前电量：${snapshot.percent}%\n充电状态：$chargingText\n时间：$time\n低电量阈值：${settings.lowThreshold}%\n满电阈值：${settings.fullChargeThreshold}%$temp"
         return NotifyEvent(state = state, title = title, body = body)
     }
 }

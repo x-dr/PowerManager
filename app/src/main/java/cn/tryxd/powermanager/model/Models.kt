@@ -2,6 +2,7 @@ package cn.tryxd.powermanager.model
 
 data class AppSettings(
     val monitorEnabled: Boolean = true,
+    val persistentNotificationEnabled: Boolean = false,
     val deviceName: String = "Android Device",
     val lowThreshold: Int = 20,
     val criticalThreshold: Int = 10,

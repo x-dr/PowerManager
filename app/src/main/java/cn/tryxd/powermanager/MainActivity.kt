@@ -3,10 +3,15 @@ package cn.tryxd.powermanager
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -33,6 +38,9 @@ import java.util.Locale
 class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var repository: SettingsRepository
+
+    private lateinit var batteryPercentView: TextView
+    private lateinit var batterySubView: TextView
     private lateinit var statusView: TextView
 
     private lateinit var monitorEnabled: CheckBox
@@ -68,81 +76,98 @@ class MainActivity : Activity() {
     }
 
     private fun buildContentView(): View {
-        val scrollView = ScrollView(this)
+        val scrollView = ScrollView(this).apply {
+            setBackgroundColor(color("#F5F7FB"))
+            isFillViewport = true
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(36, 36, 36, 36)
+            setPadding(dp(16), dp(18), dp(16), dp(24))
         }
-        scrollView.addView(root)
+        scrollView.addView(root, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
-        root.addView(title("PowerManager"))
-        statusView = TextView(this).apply {
-            textSize = 15f
-            setPadding(0, 12, 0, 20)
-        }
-        root.addView(statusView)
+        root.addView(headerView())
+        root.addView(statusCard())
 
-        monitorEnabled = checkBox("启用后台监控")
-        localNotifyEnabled = checkBox("启用本机通知")
-        root.addView(monitorEnabled)
-        root.addView(localNotifyEnabled)
+        monitorEnabled = checkBox("启用后台监控", "低频后台检查，默认 15 分钟一次")
+        localNotifyEnabled = checkBox("启用本机通知", "在手机本机弹出通知")
 
-        deviceName = editText("设备名称", InputType.TYPE_CLASS_TEXT)
-        lowThreshold = editText("低电量阈值，例如 20", InputType.TYPE_CLASS_NUMBER)
-        criticalThreshold = editText("严重电量阈值，例如 10", InputType.TYPE_CLASS_NUMBER)
-        dangerThreshold = editText("危险电量阈值，例如 5", InputType.TYPE_CLASS_NUMBER)
-        recoverThreshold = editText("恢复阈值，例如 30", InputType.TYPE_CLASS_NUMBER)
-        cooldownMinutes = editText("通知冷却分钟，例如 60", InputType.TYPE_CLASS_NUMBER)
+        deviceName = editText("Android Device", InputType.TYPE_CLASS_TEXT)
+        lowThreshold = editText("20", InputType.TYPE_CLASS_NUMBER)
+        criticalThreshold = editText("10", InputType.TYPE_CLASS_NUMBER)
+        dangerThreshold = editText("5", InputType.TYPE_CLASS_NUMBER)
+        recoverThreshold = editText("30", InputType.TYPE_CLASS_NUMBER)
+        cooldownMinutes = editText("60", InputType.TYPE_CLASS_NUMBER)
 
-        addSection(root, "监控设置")
-        listOf(deviceName, lowThreshold, criticalThreshold, dangerThreshold, recoverThreshold, cooldownMinutes).forEach {
-            root.addView(it)
-        }
+        root.addView(card("监控设置", "配置电量阈值、防重复通知和设备名称") {
+            addView(monitorEnabled)
+            addView(localNotifyEnabled)
+            addDivider(this)
+            addField(this, "设备名称", "推送里显示的设备名", deviceName)
+            addTwoColumns(
+                leftLabel = "低电量",
+                leftDesc = "触发普通提醒",
+                leftField = lowThreshold,
+                rightLabel = "严重电量",
+                rightDesc = "触发严重提醒",
+                rightField = criticalThreshold
+            )
+            addTwoColumns(
+                leftLabel = "危险电量",
+                leftDesc = "即将关机提醒",
+                leftField = dangerThreshold,
+                rightLabel = "恢复阈值",
+                rightDesc = "高于此值解除低电量",
+                rightField = recoverThreshold
+            )
+            addField(this, "冷却时间 / 分钟", "同一种通知在冷却时间内不会重复发送", cooldownMinutes)
+        })
 
-        addSection(root, "Bark")
-        barkEnabled = checkBox("启用 Bark")
-        barkServer = editText("Bark 服务地址，默认 https://api.day.app", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        barkEnabled = checkBox("启用 Bark", "适合推送到 iPhone / iPad")
+        barkServer = editText("https://api.day.app", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         barkKey = editText("Bark Key", InputType.TYPE_CLASS_TEXT)
-        root.addView(barkEnabled)
-        root.addView(barkServer)
-        root.addView(barkKey)
 
-        addSection(root, "Telegram Bot")
-        telegramEnabled = checkBox("启用 Telegram")
+        telegramEnabled = checkBox("启用 Telegram Bot", "通过机器人发送到指定 Chat ID")
         telegramBotToken = editText("Bot Token", InputType.TYPE_CLASS_TEXT)
         telegramChatId = editText("Chat ID", InputType.TYPE_CLASS_TEXT)
-        root.addView(telegramEnabled)
-        root.addView(telegramBotToken)
-        root.addView(telegramChatId)
 
-        addSection(root, "Webhook")
-        webhookEnabled = checkBox("启用 Webhook")
-        webhookUrl = editText("Webhook URL", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
-        root.addView(webhookEnabled)
-        root.addView(webhookUrl)
+        webhookEnabled = checkBox("启用 Webhook", "向自定义 HTTP/HTTPS 接口 POST JSON")
+        webhookUrl = editText("https://example.com/notify", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
 
-        val saveButton = button("保存设置并启动监控") {
-            saveSettings(startWorker = true)
-        }
-        val checkButton = button("立即检测一次") {
-            BatteryCheckWorker.checkNow(applicationContext)
-            toast("已提交立即检测任务")
-            refreshStatus()
-        }
-        val testButton = button("发送测试通知") {
-            saveSettings(startWorker = false) { sendTestNotification() }
-        }
-        val stopButton = button("停止后台监控") {
-            BatteryCheckWorker.stop(applicationContext)
-            toast("已停止后台监控")
-        }
-        val refreshButton = button("刷新状态") {
-            refreshStatus()
-        }
+        root.addView(card("通知渠道", "可以同时开启多个渠道，测试通知会逐个发送") {
+            addView(barkEnabled)
+            addField(this, "Bark 服务地址", null, barkServer)
+            addField(this, "Bark Key", null, barkKey)
+            addDivider(this)
+            addView(telegramEnabled)
+            addField(this, "Telegram Bot Token", null, telegramBotToken)
+            addField(this, "Telegram Chat ID", null, telegramChatId)
+            addDivider(this)
+            addView(webhookEnabled)
+            addField(this, "Webhook URL", null, webhookUrl)
+        })
 
-        listOf(saveButton, checkButton, testButton, stopButton, refreshButton).forEach {
-            root.addView(it)
-        }
+        root.addView(card("操作", "保存配置后会立即检查一次，并注册周期任务") {
+            addView(actionButton("保存设置并启动监控", "#2563EB", "#FFFFFF") {
+                saveSettings(startWorker = true)
+            })
+            addView(actionButton("立即检测一次", "#EEF2FF", "#3730A3") {
+                BatteryCheckWorker.checkNow(applicationContext)
+                toast("已提交立即检测任务")
+                refreshStatus()
+            })
+            addView(actionButton("发送测试通知", "#ECFDF5", "#047857") {
+                saveSettings(startWorker = false) { sendTestNotification() }
+            })
+            addView(actionButton("刷新状态", "#F1F5F9", "#334155") {
+                refreshStatus()
+            })
+            addView(actionButton("停止后台监控", "#FEF2F2", "#B91C1C") {
+                BatteryCheckWorker.stop(applicationContext)
+                toast("已停止后台监控")
+            })
+        })
+
         root.addView(note())
         return scrollView
     }
@@ -206,15 +231,18 @@ class MainActivity : Activity() {
         scope.launch {
             val settings = repository.getSettings()
             val snapshot = BatteryReader.read(applicationContext)
-            val batteryText = if (snapshot == null) {
-                "电量：读取失败"
+            if (snapshot == null) {
+                batteryPercentView.text = "--%"
+                batterySubView.text = "电量读取失败"
+                batteryPercentView.setTextColor(color("#64748B"))
             } else {
                 val charging = if (snapshot.charging) "充电中" else "未充电"
-                "电量：${snapshot.percent}% / $charging"
+                batteryPercentView.text = "${snapshot.percent}%"
+                batterySubView.text = "$charging · ${settings.deviceName}"
+                batteryPercentView.setTextColor(batteryColor(snapshot.percent))
             }
             statusView.text = buildString {
-                appendLine(batteryText)
-                appendLine("监控：${if (settings.monitorEnabled) "已启用" else "未启用"}")
+                appendLine("监控状态：${if (settings.monitorEnabled) "已启用" else "未启用"}")
                 appendLine("上次检查：${formatTime(settings.lastCheckAt)}")
                 appendLine("上次通知：${formatTime(settings.lastNotifyAt)}")
                 appendLine("上次状态：${settings.lastState}")
@@ -243,40 +271,239 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun title(text: String): TextView = TextView(this).apply {
-        this.text = text
-        textSize = 24f
-        setPadding(0, 0, 0, 8)
+    private fun headerView(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(2), dp(2), dp(2), dp(12))
+            addView(TextView(context).apply {
+                text = "PowerManager"
+                textSize = 30f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(color("#0F172A"))
+            })
+            addView(TextView(context).apply {
+                text = "安卓电量监控与多通道推送"
+                textSize = 14f
+                setTextColor(color("#64748B"))
+                setPadding(0, dp(4), 0, 0)
+            })
+        }
     }
 
-    private fun addSection(root: LinearLayout, text: String) {
+    private fun statusCard(): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded("#FFFFFF", 22, "#E5EAF1")
+            elevation = dp(2).toFloat()
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            layoutParams = cardParams()
+
+            addView(TextView(context).apply {
+                text = "当前设备状态"
+                textSize = 14f
+                setTextColor(color("#64748B"))
+            })
+            batteryPercentView = TextView(context).apply {
+                text = "--%"
+                textSize = 48f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(color("#2563EB"))
+                setPadding(0, dp(4), 0, 0)
+            }
+            addView(batteryPercentView)
+            batterySubView = TextView(context).apply {
+                text = "正在读取电量..."
+                textSize = 15f
+                setTextColor(color("#334155"))
+                setPadding(0, 0, 0, dp(10))
+            }
+            addView(batterySubView)
+            statusView = TextView(context).apply {
+                textSize = 13f
+                setTextColor(color("#64748B"))
+                setLineSpacing(dp(2).toFloat(), 1.0f)
+                background = rounded("#F8FAFC", 14, "#E5EAF1")
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+            }
+            addView(statusView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+    }
+
+    private fun card(title: String, subtitle: String, block: LinearLayout.() -> Unit): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded("#FFFFFF", 22, "#E5EAF1")
+            elevation = dp(1).toFloat()
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = cardParams()
+
+            addView(TextView(context).apply {
+                text = title
+                textSize = 20f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(color("#0F172A"))
+            })
+            addView(TextView(context).apply {
+                text = subtitle
+                textSize = 13f
+                setTextColor(color("#64748B"))
+                setPadding(0, dp(3), 0, dp(12))
+            })
+            block()
+        }
+    }
+
+    private fun checkBox(text: String, description: String): CheckBox {
+        return CheckBox(this).apply {
+            this.text = "$text\n$description"
+            textSize = 15f
+            setTextColor(color("#1E293B"))
+            setPadding(0, dp(6), 0, dp(6))
+        }
+    }
+
+    private fun editText(hint: String, inputTypeValue: Int): EditText {
+        return EditText(this).apply {
+            this.hint = hint
+            inputType = inputTypeValue
+            textSize = 15f
+            setSingleLine(true)
+            setTextColor(color("#0F172A"))
+            setHintTextColor(color("#94A3B8"))
+            background = rounded("#F8FAFC", 14, "#CBD5E1")
+            setPadding(dp(12), 0, dp(12), 0)
+            minHeight = dp(48)
+        }
+    }
+
+    private fun addField(root: LinearLayout, label: String, desc: String?, field: EditText) {
         root.addView(TextView(this).apply {
-            this.text = text
-            textSize = 18f
-            setPadding(0, 28, 0, 8)
+            text = label
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(color("#334155"))
+            setPadding(0, dp(8), 0, dp(2))
+        })
+        if (!desc.isNullOrBlank()) {
+            root.addView(TextView(this).apply {
+                text = desc
+                textSize = 12f
+                setTextColor(color("#94A3B8"))
+                setPadding(0, 0, 0, dp(6))
+            })
+        }
+        root.addView(field, fieldParams())
+    }
+
+    private fun LinearLayout.addTwoColumns(
+        leftLabel: String,
+        leftDesc: String,
+        leftField: EditText,
+        rightLabel: String,
+        rightDesc: String,
+        rightField: EditText
+    ) {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            weightSum = 2f
+        }
+        row.addView(column(leftLabel, leftDesc, leftField), columnParams(isLeft = true))
+        row.addView(column(rightLabel, rightDesc, rightField), columnParams(isLeft = false))
+        addView(row, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    }
+
+    private fun column(label: String, desc: String, field: EditText): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(context).apply {
+                text = label
+                textSize = 14f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(color("#334155"))
+                setPadding(0, dp(8), 0, dp(2))
+            })
+            addView(TextView(context).apply {
+                text = desc
+                textSize = 12f
+                setTextColor(color("#94A3B8"))
+                setPadding(0, 0, 0, dp(6))
+            })
+            addView(field, fieldParams())
+        }
+    }
+
+    private fun addDivider(root: LinearLayout) {
+        root.addView(View(this).apply {
+            setBackgroundColor(color("#E5EAF1"))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)).apply {
+            setMargins(0, dp(12), 0, dp(12))
         })
     }
 
-    private fun checkBox(text: String): CheckBox = CheckBox(this).apply {
-        this.text = text
-        textSize = 16f
+    private fun actionButton(text: String, bgColor: String, textColor: String, onClick: () -> Unit): Button {
+        return Button(this).apply {
+            this.text = text
+            textSize = 15f
+            isAllCaps = false
+            gravity = Gravity.CENTER
+            setTextColor(color(textColor))
+            background = rounded(bgColor, 16, bgColor)
+            setPadding(dp(8), 0, dp(8), 0)
+            minHeight = dp(48)
+            setOnClickListener { onClick() }
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)).apply {
+                setMargins(0, dp(6), 0, dp(6))
+            }
+        }
     }
 
-    private fun editText(hint: String, inputTypeValue: Int): EditText = EditText(this).apply {
-        this.hint = hint
-        inputType = inputTypeValue
-        setSingleLine(true)
+    private fun note(): TextView {
+        return TextView(this).apply {
+            text = "提示：WorkManager 最短周期为 15 分钟。国产 ROM 建议手动允许自启动、后台运行、忽略电池优化和通知权限。"
+            textSize = 13f
+            setTextColor(color("#64748B"))
+            background = rounded("#EEF2FF", 18, "#C7D2FE")
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, dp(4), 0, 0)
+            }
+        }
     }
 
-    private fun button(text: String, onClick: () -> Unit): Button = Button(this).apply {
-        this.text = text
-        setOnClickListener { onClick() }
+    private fun cardParams(): LinearLayout.LayoutParams {
+        return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            setMargins(0, dp(8), 0, dp(12))
+        }
     }
 
-    private fun note(): TextView = TextView(this).apply {
-        text = "提示：WorkManager 最短周期为 15 分钟。国产 ROM 建议手动允许自启动、后台运行、忽略电池优化。"
-        textSize = 13f
-        setPadding(0, 24, 0, 0)
+    private fun fieldParams(): LinearLayout.LayoutParams {
+        return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
+            setMargins(0, 0, 0, dp(8))
+        }
+    }
+
+    private fun columnParams(isLeft: Boolean): LinearLayout.LayoutParams {
+        return LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            if (isLeft) setMargins(0, 0, dp(6), 0) else setMargins(dp(6), 0, 0, 0)
+        }
+    }
+
+    private fun rounded(fill: String, radiusDp: Int, stroke: String): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(color(fill))
+            cornerRadius = dp(radiusDp).toFloat()
+            setStroke(dp(1), color(stroke))
+        }
+    }
+
+    private fun batteryColor(percent: Int): Int {
+        return when {
+            percent <= 5 -> color("#DC2626")
+            percent <= 10 -> color("#EA580C")
+            percent <= 20 -> color("#D97706")
+            else -> color("#2563EB")
+        }
     }
 
     private fun EditText.intValue(defaultValue: Int): Int {
@@ -290,5 +517,11 @@ class MainActivity : Activity() {
 
     private fun toast(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun color(hex: String): Int = Color.parseColor(hex)
+
+    private fun dp(value: Int): Int {
+        return (value * resources.displayMetrics.density + 0.5f).toInt()
     }
 }

@@ -93,8 +93,13 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun updateLastState(state: BatteryLevelState) {
+        val normalizedState = when (state) {
+            BatteryLevelState.CHARGING,
+            BatteryLevelState.FULL_CHARGE -> BatteryLevelState.NORMAL
+            else -> state
+        }
         context.powerSettingsDataStore.edit { p ->
-            p[Keys.LAST_STATE] = state.name
+            p[Keys.LAST_STATE] = normalizedState.name
         }
     }
 
@@ -107,16 +112,27 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun updateNotifyState(state: BatteryLevelState, now: Long = System.currentTimeMillis()) {
         context.powerSettingsDataStore.edit { p ->
-            p[Keys.LAST_STATE] = state.name
             p[Keys.LAST_NOTIFY_AT] = now
             when (state) {
-                BatteryLevelState.LOW -> p[Keys.LAST_LOW_NOTIFY_AT] = now
-                BatteryLevelState.CRITICAL -> p[Keys.LAST_CRITICAL_NOTIFY_AT] = now
-                BatteryLevelState.DANGER -> p[Keys.LAST_DANGER_NOTIFY_AT] = now
-                BatteryLevelState.RECOVERED -> p[Keys.LAST_RECOVER_NOTIFY_AT] = now
+                BatteryLevelState.LOW -> {
+                    p[Keys.LAST_STATE] = state.name
+                    p[Keys.LAST_LOW_NOTIFY_AT] = now
+                }
+                BatteryLevelState.CRITICAL -> {
+                    p[Keys.LAST_STATE] = state.name
+                    p[Keys.LAST_CRITICAL_NOTIFY_AT] = now
+                }
+                BatteryLevelState.DANGER -> {
+                    p[Keys.LAST_STATE] = state.name
+                    p[Keys.LAST_DANGER_NOTIFY_AT] = now
+                }
+                BatteryLevelState.RECOVERED -> {
+                    p[Keys.LAST_STATE] = BatteryLevelState.NORMAL.name
+                    p[Keys.LAST_RECOVER_NOTIFY_AT] = now
+                }
                 BatteryLevelState.CHARGING -> p[Keys.LAST_CHARGING_NOTIFY_AT] = now
                 BatteryLevelState.FULL_CHARGE -> p[Keys.LAST_FULL_CHARGE_NOTIFY_AT] = now
-                BatteryLevelState.NORMAL -> Unit
+                BatteryLevelState.NORMAL -> p[Keys.LAST_STATE] = BatteryLevelState.NORMAL.name
             }
         }
     }

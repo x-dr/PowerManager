@@ -27,7 +27,7 @@ PowerManager 是一个使用 Kotlin 编写的 Android 电量监控 App。
 仓库已内置 GitHub Actions：
 
 ```bash
-gradle assembleDebug --no-daemon
+gradle assembleDebug --no-daemon --stacktrace --info
 ```
 
 构建完成后，debug APK 会上传到 Actions artifact：`PowerManager-debug-apk`。
@@ -36,7 +36,7 @@ gradle assembleDebug --no-daemon
 
 - JDK 17
 - Android SDK
-- Gradle 8.10.2 或兼容版本
+- Gradle 8.9 或兼容版本
 
 ## 使用建议
 

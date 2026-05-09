@@ -7,11 +7,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import cn.tryxd.powermanager.data.SettingsRepository
-import cn.tryxd.powermanager.model.BatteryLevelState
-import cn.tryxd.powermanager.monitor.BatteryReader
-import cn.tryxd.powermanager.notifier.NotifyDispatcher
-import cn.tryxd.powermanager.rule.BatteryRuleEngine
 import java.util.concurrent.TimeUnit
 
 class BatteryCheckWorker(
@@ -20,39 +15,8 @@ class BatteryCheckWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        val repository = SettingsRepository(applicationContext)
-        val settings = repository.getSettings()
-        repository.markChecked()
-
-        if (!settings.monitorEnabled) return Result.success()
-
-        val snapshot = BatteryReader.read(applicationContext) ?: return Result.retry()
-        val newState = BatteryRuleEngine.evaluate(snapshot, settings)
-        val now = System.currentTimeMillis()
-
-        if (newState == BatteryLevelState.RECOVERED) {
-            val wasLow = settings.lastState == BatteryLevelState.LOW ||
-                settings.lastState == BatteryLevelState.CRITICAL ||
-                settings.lastState == BatteryLevelState.DANGER
-
-            if (wasLow && BatteryRuleEngine.shouldNotify(newState, settings, now)) {
-                val event = BatteryRuleEngine.buildEvent(newState, snapshot, settings)
-                NotifyDispatcher(applicationContext).send(event, settings)
-                repository.updateNotifyState(newState, now)
-            }
-            repository.updateLastState(BatteryLevelState.NORMAL)
-            return Result.success()
-        }
-
-        if (BatteryRuleEngine.shouldNotify(newState, settings, now)) {
-            val event = BatteryRuleEngine.buildEvent(newState, snapshot, settings)
-            NotifyDispatcher(applicationContext).send(event, settings)
-            repository.updateNotifyState(newState, now)
-        } else {
-            repository.updateLastState(newState)
-        }
-
-        return Result.success()
+        val ok = BatteryAlertProcessor.process(applicationContext, markChecked = true)
+        return if (ok) Result.success() else Result.retry()
     }
 
     companion object {

@@ -46,6 +46,8 @@ class MainActivity : Activity() {
 
     private lateinit var monitorEnabled: CheckBox
     private lateinit var persistentNotificationEnabled: CheckBox
+    private lateinit var chargingNotifyEnabled: CheckBox
+    private lateinit var fullChargeNotifyEnabled: CheckBox
     private lateinit var localNotifyEnabled: CheckBox
     private lateinit var barkEnabled: CheckBox
     private lateinit var telegramEnabled: CheckBox
@@ -56,6 +58,7 @@ class MainActivity : Activity() {
     private lateinit var criticalThreshold: EditText
     private lateinit var dangerThreshold: EditText
     private lateinit var recoverThreshold: EditText
+    private lateinit var fullChargeThreshold: EditText
     private lateinit var cooldownMinutes: EditText
     private lateinit var barkServer: EditText
     private lateinit var barkKey: EditText
@@ -93,18 +96,23 @@ class MainActivity : Activity() {
 
         monitorEnabled = checkBox("启用后台监控", "低频后台检查，默认 15 分钟一次")
         persistentNotificationEnabled = checkBox("启用常驻通知栏", "通知栏实时显示电量，可降低系统清理概率")
-        localNotifyEnabled = checkBox("启用本机通知", "在手机本机弹出低电量提醒")
+        chargingNotifyEnabled = checkBox("启用开始充电提醒", "插上电源后立即发送提醒")
+        fullChargeNotifyEnabled = checkBox("启用充满电提醒", "达到满电阈值后发送提醒")
+        localNotifyEnabled = checkBox("启用本机通知", "在手机本机弹出低电量、充电和满电提醒")
 
         deviceName = editText("Android Device", InputType.TYPE_CLASS_TEXT)
         lowThreshold = editText("20", InputType.TYPE_CLASS_NUMBER)
         criticalThreshold = editText("10", InputType.TYPE_CLASS_NUMBER)
         dangerThreshold = editText("5", InputType.TYPE_CLASS_NUMBER)
         recoverThreshold = editText("30", InputType.TYPE_CLASS_NUMBER)
+        fullChargeThreshold = editText("100", InputType.TYPE_CLASS_NUMBER)
         cooldownMinutes = editText("60", InputType.TYPE_CLASS_NUMBER)
 
-        root.addView(card("监控设置", "配置电量阈值、常驻通知和设备名称") {
+        root.addView(card("监控设置", "配置电量阈值、充电提醒、常驻通知和设备名称") {
             addView(monitorEnabled)
             addView(persistentNotificationEnabled)
+            addView(chargingNotifyEnabled)
+            addView(fullChargeNotifyEnabled)
             addView(localNotifyEnabled)
             addDivider(this)
             addField(this, "设备名称", "推送和常驻通知里显示的设备名", deviceName)
@@ -124,6 +132,7 @@ class MainActivity : Activity() {
                 rightDesc = "高于此值解除低电量",
                 rightField = recoverThreshold
             )
+            addField(this, "满电阈值 / %", "达到此电量并且仍接入电源时发送满电提醒，范围 50–100", fullChargeThreshold)
             addField(this, "冷却时间 / 分钟", "同一种通知在冷却时间内不会重复发送", cooldownMinutes)
         })
 
@@ -184,6 +193,8 @@ class MainActivity : Activity() {
             val settings = repository.getSettings()
             monitorEnabled.isChecked = settings.monitorEnabled
             persistentNotificationEnabled.isChecked = settings.persistentNotificationEnabled
+            chargingNotifyEnabled.isChecked = settings.chargingNotifyEnabled
+            fullChargeNotifyEnabled.isChecked = settings.fullChargeNotifyEnabled
             localNotifyEnabled.isChecked = settings.localNotifyEnabled
             barkEnabled.isChecked = settings.barkEnabled
             telegramEnabled.isChecked = settings.telegramEnabled
@@ -194,6 +205,7 @@ class MainActivity : Activity() {
             criticalThreshold.setText(settings.criticalThreshold.toString())
             dangerThreshold.setText(settings.dangerThreshold.toString())
             recoverThreshold.setText(settings.recoverThreshold.toString())
+            fullChargeThreshold.setText(settings.fullChargeThreshold.toString())
             cooldownMinutes.setText(settings.cooldownMinutes.toString())
             barkServer.setText(settings.barkServer)
             barkKey.setText(settings.barkKey)
@@ -209,6 +221,9 @@ class MainActivity : Activity() {
             val settings = old.copy(
                 monitorEnabled = monitorEnabled.isChecked,
                 persistentNotificationEnabled = persistentNotificationEnabled.isChecked,
+                chargingNotifyEnabled = chargingNotifyEnabled.isChecked,
+                fullChargeNotifyEnabled = fullChargeNotifyEnabled.isChecked,
+                fullChargeThreshold = fullChargeThreshold.intValue(100).coerceIn(50, 100),
                 localNotifyEnabled = localNotifyEnabled.isChecked,
                 deviceName = deviceName.text.toString().trim().ifBlank { "Android Device" },
                 lowThreshold = lowThreshold.intValue(20).coerceIn(1, 100),
@@ -260,7 +275,11 @@ class MainActivity : Activity() {
                 batterySubView.text = "电量读取失败"
                 batteryPercentView.setTextColor(color("#64748B"))
             } else {
-                val charging = if (snapshot.charging) "充电中" else "未充电"
+                val charging = when {
+                    snapshot.charging -> "充电中"
+                    snapshot.plugged -> "已接入电源"
+                    else -> "未充电"
+                }
                 batteryPercentView.text = "${snapshot.percent}%"
                 batterySubView.text = "$charging · ${settings.deviceName}"
                 batteryPercentView.setTextColor(batteryColor(snapshot.percent))
@@ -268,6 +287,8 @@ class MainActivity : Activity() {
             statusView.text = buildString {
                 appendLine("后台监控：${if (settings.monitorEnabled) "已启用" else "未启用"}")
                 appendLine("常驻通知：${if (settings.persistentNotificationEnabled) "已启用" else "未启用"}")
+                appendLine("充电提醒：${if (settings.chargingNotifyEnabled) "已启用" else "未启用"}")
+                appendLine("满电提醒：${if (settings.fullChargeNotifyEnabled) "已启用" else "未启用"} / ${settings.fullChargeThreshold}%")
                 appendLine("上次检查：${formatTime(settings.lastCheckAt)}")
                 appendLine("上次通知：${formatTime(settings.lastNotifyAt)}")
                 appendLine("上次状态：${settings.lastState}")
@@ -484,7 +505,7 @@ class MainActivity : Activity() {
 
     private fun note(): TextView {
         return TextView(this).apply {
-            text = "提示：常驻通知栏需要通知权限；WorkManager 最短周期为 15 分钟。国产 ROM 建议手动允许自启动、后台运行、忽略电池优化和通知权限。"
+            text = "提示：插电提醒依赖系统电源广播；满电提醒会在周期检测或常驻通知每分钟刷新时触发。国产 ROM 建议手动允许自启动、后台运行、忽略电池优化和通知权限。"
             textSize = 13f
             setTextColor(color("#64748B"))
             background = rounded("#EEF2FF", 18, "#C7D2FE")

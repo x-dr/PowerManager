@@ -59,6 +59,35 @@ gradle assembleDebug --no-daemon --stacktrace --info
 - Android SDK
 - Gradle 8.9 或兼容版本
 
+## 免卸载升级的签名配置（推荐）
+
+为避免“签名不一致导致只能卸载重装”，请固定 release keystore，不要在不同机器上重新生成。
+
+1. 复制配置模板：
+
+```bash
+cp keystore/release.properties.example keystore/release.properties
+```
+
+2. 填入同一套 release 签名信息（或改用环境变量/`~/.gradle/gradle.properties`）：
+
+- `PM_RELEASE_STORE_FILE`
+- `PM_RELEASE_STORE_PASSWORD`
+- `PM_RELEASE_KEY_ALIAS`
+- `PM_RELEASE_KEY_PASSWORD`
+
+3. 发布前执行校验：
+
+```bash
+./gradlew verifyReleaseSigning
+```
+
+4. 仅在校验通过后构建发布包：
+
+```bash
+./gradlew assembleRelease
+```
+
 ## 使用建议
 
 国产 ROM 为了更稳定，建议手动允许：

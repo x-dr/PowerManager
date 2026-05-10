@@ -28,8 +28,11 @@ import cn.tryxd.powermanager.service.BatteryForegroundService
 import cn.tryxd.powermanager.worker.BatteryCheckWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -38,6 +41,7 @@ import java.util.Locale
 
 class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var uiRefreshJob: Job? = null
     private lateinit var repository: SettingsRepository
 
     private lateinit var batteryPercentView: TextView
@@ -75,9 +79,35 @@ class MainActivity : Activity() {
         refreshStatus()
     }
 
+    override fun onResume() {
+        super.onResume()
+        startUiAutoRefresh()
+    }
+
+    override fun onPause() {
+        stopUiAutoRefresh()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        stopUiAutoRefresh()
         super.onDestroy()
         scope.cancel()
+    }
+
+    private fun startUiAutoRefresh() {
+        if (uiRefreshJob?.isActive == true) return
+        uiRefreshJob = scope.launch {
+            while (isActive) {
+                refreshStatus()
+                delay(30_000L)
+            }
+        }
+    }
+
+    private fun stopUiAutoRefresh() {
+        uiRefreshJob?.cancel()
+        uiRefreshJob = null
     }
 
     private fun buildContentView(): View {
@@ -270,9 +300,10 @@ class MainActivity : Activity() {
         scope.launch {
             val settings = repository.getSettings()
             val snapshot = BatteryReader.read(applicationContext)
+            val uiRefreshAt = System.currentTimeMillis()
             if (snapshot == null) {
                 batteryPercentView.text = "--%"
-                batterySubView.text = "电量读取失败"
+                batterySubView.text = "电量读取失败 · ${formatTime(uiRefreshAt)}"
                 batteryPercentView.setTextColor(color("#64748B"))
             } else {
                 val charging = when {
@@ -281,15 +312,16 @@ class MainActivity : Activity() {
                     else -> "未充电"
                 }
                 batteryPercentView.text = "${snapshot.percent}%"
-                batterySubView.text = "$charging · ${settings.deviceName}"
+                batterySubView.text = "$charging · ${settings.deviceName} · ${formatTime(uiRefreshAt)}"
                 batteryPercentView.setTextColor(batteryColor(snapshot.percent))
             }
             statusView.text = buildString {
+                appendLine("界面刷新：${formatTime(uiRefreshAt)}")
                 appendLine("后台监控：${if (settings.monitorEnabled) "已启用" else "未启用"}")
                 appendLine("常驻通知：${if (settings.persistentNotificationEnabled) "已启用" else "未启用"}")
                 appendLine("充电提醒：${if (settings.chargingNotifyEnabled) "已启用" else "未启用"}")
                 appendLine("满电提醒：${if (settings.fullChargeNotifyEnabled) "已启用" else "未启用"} / ${settings.fullChargeThreshold}%")
-                appendLine("上次检查：${formatTime(settings.lastCheckAt)}")
+                appendLine("后台检查：${formatTime(settings.lastCheckAt)}")
                 appendLine("上次通知：${formatTime(settings.lastNotifyAt)}")
                 appendLine("上次状态：${settings.lastState}")
             }
@@ -505,7 +537,7 @@ class MainActivity : Activity() {
 
     private fun note(): TextView {
         return TextView(this).apply {
-            text = "提示：插电提醒依赖系统电源广播；满电提醒会在周期检测或常驻通知每分钟刷新时触发。国产 ROM 建议手动允许自启动、后台运行、忽略电池优化和通知权限。"
+            text = "提示：当前电量显示会在页面可见时每 30 秒自动刷新；后台检查由系统调度，WorkManager 的 15 分钟周期不是严格定时，可能被系统省电策略延后。"
             textSize = 13f
             setTextColor(color("#64748B"))
             background = rounded("#EEF2FF", 18, "#C7D2FE")

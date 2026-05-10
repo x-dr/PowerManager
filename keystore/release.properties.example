@@ -1,0 +1,4 @@
+PM_RELEASE_STORE_FILE=keystore/release.keystore
+PM_RELEASE_STORE_PASSWORD=replace-with-store-password
+PM_RELEASE_KEY_ALIAS=release
+PM_RELEASE_KEY_PASSWORD=replace-with-key-password

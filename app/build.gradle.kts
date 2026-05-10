@@ -3,6 +3,22 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+import java.util.Properties
+
+val keystorePropertiesFile = rootProject.file("keystore/release.properties")
+val keystoreProperties = Properties()
+val hasLocalKeystoreProperties = keystorePropertiesFile.exists()
+
+if (hasLocalKeystoreProperties) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+fun projectSecret(name: String): String? {
+    return (findProperty(name) as String?)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(name)?.takeIf { it.isNotBlank() }
+        ?: keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+}
+
 android {
     namespace = "cn.tryxd.powermanager"
     compileSdk = 35
@@ -15,6 +31,33 @@ android {
         versionName = "1.3.3"
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = projectSecret("PM_RELEASE_STORE_FILE")
+            val storePassword = projectSecret("PM_RELEASE_STORE_PASSWORD")
+            val keyAlias = projectSecret("PM_RELEASE_KEY_ALIAS")
+            val keyPassword = projectSecret("PM_RELEASE_KEY_PASSWORD")
+
+            if (
+                !storeFilePath.isNullOrBlank() &&
+                !storePassword.isNullOrBlank() &&
+                !keyAlias.isNullOrBlank() &&
+                !keyPassword.isNullOrBlank()
+            ) {
+                storeFile = rootProject.file(storeFilePath)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -23,6 +66,39 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+tasks.register("verifyReleaseSigning") {
+    group = "verification"
+    description = "Verify release signing config and version code for upgrade-safe publishing."
+
+    doLast {
+        val requiredKeys = listOf(
+            "PM_RELEASE_STORE_FILE",
+            "PM_RELEASE_STORE_PASSWORD",
+            "PM_RELEASE_KEY_ALIAS",
+            "PM_RELEASE_KEY_PASSWORD"
+        )
+        val missingKeys = requiredKeys.filter { projectSecret(it).isNullOrBlank() }
+        check(missingKeys.isEmpty()) {
+            "Missing release signing values: ${missingKeys.joinToString(", ")}. " +
+                "Set them in environment variables, Gradle properties, or keystore/release.properties."
+        }
+
+        val releaseStore = rootProject.file(projectSecret("PM_RELEASE_STORE_FILE")!!)
+        check(releaseStore.exists()) {
+            "Release keystore file does not exist: ${releaseStore.path}"
+        }
+
+        val releaseVersionCode = android.defaultConfig.versionCode ?: 0
+        check(releaseVersionCode > 0) {
+            "versionCode must be greater than 0 for upgrade-safe publishing."
+        }
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" || it.name == "bundleRelease" }.configureEach {
+    dependsOn("verifyReleaseSigning")
 }
 
 dependencies {

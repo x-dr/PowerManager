@@ -10,12 +10,17 @@ import java.util.Locale
 
 object BatteryRuleEngine {
     fun evaluate(snapshot: BatterySnapshot, settings: AppSettings): BatteryLevelState {
+        val safeLastState = when (settings.lastState) {
+            BatteryLevelState.CHARGING,
+            BatteryLevelState.FULL_CHARGE -> BatteryLevelState.NORMAL
+            else -> settings.lastState
+        }
         return when {
             snapshot.percent <= settings.dangerThreshold -> BatteryLevelState.DANGER
             snapshot.percent <= settings.criticalThreshold -> BatteryLevelState.CRITICAL
             snapshot.percent <= settings.lowThreshold -> BatteryLevelState.LOW
             snapshot.percent >= settings.recoverThreshold -> BatteryLevelState.RECOVERED
-            else -> settings.lastState
+            else -> safeLastState
         }
     }
 

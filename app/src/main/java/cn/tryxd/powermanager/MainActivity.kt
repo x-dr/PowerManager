@@ -39,15 +39,22 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * 应用主 Activity 界面类。
+ * 负责渲染配置表单及状态面板，管理用户输入的各项监控参数及通知设置。
+ */
 class MainActivity : Activity() {
+    // 定义作用于 UI 的协程作用域（绑定主线程调度器 Dispatchers.Main）
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var uiRefreshJob: Job? = null
     private lateinit var repository: SettingsRepository
 
+    // 状态卡片组件定义
     private lateinit var batteryPercentView: TextView
     private lateinit var batterySubView: TextView
     private lateinit var statusView: TextView
 
+    // 各项配置的复选框 CheckBox
     private lateinit var monitorEnabled: CheckBox
     private lateinit var persistentNotificationEnabled: CheckBox
     private lateinit var chargingNotifyEnabled: CheckBox
@@ -57,6 +64,7 @@ class MainActivity : Activity() {
     private lateinit var telegramEnabled: CheckBox
     private lateinit var webhookEnabled: CheckBox
 
+    // 各项配置的输入框 EditText
     private lateinit var deviceName: EditText
     private lateinit var lowThreshold: EditText
     private lateinit var criticalThreshold: EditText
@@ -73,18 +81,24 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = SettingsRepository(applicationContext)
+        // 动态申请 Android 13+ 的通知权限
         requestNotificationPermission()
+        // 编程式构建并填充主页面布局
         setContentView(buildContentView())
+        // 异步加载已持久化的配置
         loadSettings()
+        // 刷新当前的电池及监控服务状态
         refreshStatus()
     }
 
     override fun onResume() {
         super.onResume()
+        // 页面重新可见时启动 30 秒间隔的 UI 自动刷新机制
         startUiAutoRefresh()
     }
 
     override fun onPause() {
+        // 页面不可见时停止自动刷新，避免不必要的耗电
         stopUiAutoRefresh()
         super.onPause()
     }
@@ -92,9 +106,13 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         stopUiAutoRefresh()
         super.onDestroy()
+        // 销毁 Activity 时取消协程作用域下的所有子任务，防止协程内存泄漏
         scope.cancel()
     }
 
+    /**
+     * 启动定时刷新回路，每 30 秒执行一次 [refreshStatus]。
+     */
     private fun startUiAutoRefresh() {
         if (uiRefreshJob?.isActive == true) return
         uiRefreshJob = scope.launch {
@@ -105,11 +123,17 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 停止定时刷新回路。
+     */
     private fun stopUiAutoRefresh() {
         uiRefreshJob?.cancel()
         uiRefreshJob = null
     }
 
+    /**
+     * 编程式创建主视图容器和表单元素。
+     */
     private fun buildContentView(): View {
         val scrollView = ScrollView(this).apply {
             setBackgroundColor(color("#F5F7FB"))
@@ -121,15 +145,18 @@ class MainActivity : Activity() {
         }
         scrollView.addView(root, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
+        // 添加头部标题和状态卡片
         root.addView(headerView())
         root.addView(statusCard())
 
+        // 构造主要的 CheckBox 复选框
         monitorEnabled = checkBox("启用后台监控", "低频后台检查，默认 15 分钟一次")
         persistentNotificationEnabled = checkBox("启用常驻通知栏", "通知栏实时显示电量，可降低系统清理概率")
         chargingNotifyEnabled = checkBox("启用开始充电提醒", "插上电源后立即发送提醒")
         fullChargeNotifyEnabled = checkBox("启用充满电提醒", "达到满电阈值后发送提醒")
         localNotifyEnabled = checkBox("启用本机通知", "在手机本机弹出低电量、充电和满电提醒")
 
+        // 构造主要的 EditText 输入框
         deviceName = editText("Android Device", InputType.TYPE_CLASS_TEXT)
         lowThreshold = editText("20", InputType.TYPE_CLASS_NUMBER)
         criticalThreshold = editText("10", InputType.TYPE_CLASS_NUMBER)
@@ -138,6 +165,7 @@ class MainActivity : Activity() {
         fullChargeThreshold = editText("100", InputType.TYPE_CLASS_NUMBER)
         cooldownMinutes = editText("60", InputType.TYPE_CLASS_NUMBER)
 
+        // 添加“监控设置”卡片组
         root.addView(card("监控设置", "配置电量阈值、充电提醒、常驻通知和设备名称") {
             addView(monitorEnabled)
             addView(persistentNotificationEnabled)
@@ -166,6 +194,7 @@ class MainActivity : Activity() {
             addField(this, "冷却时间 / 分钟", "同一种通知在冷却时间内不会重复发送", cooldownMinutes)
         })
 
+        // 构造 Bark、Telegram、Webhook 等第三方通知渠道组件
         barkEnabled = checkBox("启用 Bark", "适合推送到 iPhone / iPad")
         barkServer = editText("https://api.day.app", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         barkKey = editText("Bark Key", InputType.TYPE_CLASS_TEXT)
@@ -177,6 +206,7 @@ class MainActivity : Activity() {
         webhookEnabled = checkBox("启用 Webhook", "向自定义 HTTP/HTTPS 接口 POST JSON")
         webhookUrl = editText("https://example.com/notify", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
 
+        // 添加“通知渠道”卡片组
         root.addView(card("通知渠道", "可以同时开启多个渠道，测试通知会逐个发送") {
             addView(barkEnabled)
             addField(this, "Bark 服务地址", null, barkServer)
@@ -190,6 +220,7 @@ class MainActivity : Activity() {
             addField(this, "Webhook URL", null, webhookUrl)
         })
 
+        // 添加“操作”卡片组，提供保存、单次测试、刷新和注销等入口
         root.addView(card("操作", "保存配置后会立即检查一次，并注册周期任务") {
             addView(actionButton("保存设置并启动监控", "#2563EB", "#FFFFFF") {
                 saveSettings(startWorker = true)
@@ -218,6 +249,9 @@ class MainActivity : Activity() {
         return scrollView
     }
 
+    /**
+     * 从仓库异步读取配置项，并回显至各复选框及文本输入框中。
+     */
     private fun loadSettings() {
         scope.launch {
             val settings = repository.getSettings()
@@ -245,6 +279,12 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 将输入框/复选框的最新配置收集，并通过仓库更新持久化，同时调度/停用后台 Worker 以及常驻前台服务。
+     * 
+     * @param startWorker 是否要在保存后立即启动电量轮询 WorkManager 任务
+     * @param afterSaved 保存完成后的可选回调函数
+     */
     private fun saveSettings(startWorker: Boolean, afterSaved: (() -> Unit)? = null) {
         scope.launch {
             val old = repository.getSettings()
@@ -271,10 +311,14 @@ class MainActivity : Activity() {
                 webhookUrl = webhookUrl.text.toString().trim()
             )
             repository.saveSettings(settings)
+            
+            // 如果启用了后台监控且要求启动监控，则注册 WorkManager
             if (startWorker && settings.monitorEnabled) {
                 BatteryCheckWorker.start(applicationContext)
                 BatteryCheckWorker.checkNow(applicationContext)
             }
+            
+            // 根据配置项决定启动还是停止常驻前台监控服务
             if (settings.persistentNotificationEnabled) {
                 BatteryForegroundService.start(applicationContext)
             } else {
@@ -286,6 +330,9 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 停止前台常驻服务，并重置持久化和 UI 上的 persistentNotificationEnabled 项。
+     */
     private fun stopPersistentNotification() {
         scope.launch {
             repository.setPersistentNotificationEnabled(false)
@@ -296,11 +343,16 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 刷新当前的电池电量、工作状态，以及后台各周期任务的历史运行信息。
+     */
     private fun refreshStatus() {
         scope.launch {
             val settings = repository.getSettings()
             val snapshot = BatteryReader.read(applicationContext)
             val uiRefreshAt = System.currentTimeMillis()
+            
+            // 刷新电池百分比和大面板状态
             if (snapshot == null) {
                 batteryPercentView.text = "--%"
                 batterySubView.text = "电量读取失败 · ${formatTime(uiRefreshAt)}"
@@ -315,6 +367,8 @@ class MainActivity : Activity() {
                 batterySubView.text = "$charging · ${settings.deviceName} · ${formatTime(uiRefreshAt)}"
                 batteryPercentView.setTextColor(batteryColor(snapshot.percent))
             }
+            
+            // 刷新辅助检查元信息明细列表
             statusView.text = buildString {
                 appendLine("界面刷新：${formatTime(uiRefreshAt)}")
                 appendLine("后台监控：${if (settings.monitorEnabled) "已启用" else "未启用"}")
@@ -328,6 +382,9 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 保存完设置后，以“低电量 LOW”状态为模拟对象，向当前启用的通知渠道分发一条测试消息。
+     */
     private fun sendTestNotification() {
         scope.launch {
             val settings = repository.getSettings()
@@ -341,6 +398,9 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * 针对 Android 13 (Tiramisu, API 33) 及以上系统动态申请 POST_NOTIFICATIONS 通知权限。
+     */
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

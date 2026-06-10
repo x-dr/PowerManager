@@ -13,10 +13,17 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
+// 使用 DataStore 扩展属性定义设置数据存储实例，文件名为 power_manager_settings
 private val Context.powerSettingsDataStore by preferencesDataStore(name = "power_manager_settings")
 
+/**
+ * 设置仓库类，负责使用 Jetpack DataStore Preferences 持久化和读取配置信息。
+ */
 class SettingsRepository(private val context: Context) {
 
+    /**
+     * 电量配置流，当 DataStore 中的数据改变时，会发射新的 [AppSettings] 对象。
+     */
     val settingsFlow: Flow<AppSettings> = context.powerSettingsDataStore.data.map { p ->
         AppSettings(
             monitorEnabled = p[Keys.MONITOR_ENABLED] ?: true,
@@ -53,8 +60,14 @@ class SettingsRepository(private val context: Context) {
         )
     }
 
+    /**
+     * 挂起函数，单次获取当前最新的配置快照。
+     */
     suspend fun getSettings(): AppSettings = settingsFlow.first()
 
+    /**
+     * 保存除运行时状态外的用户可编辑配置项。
+     */
     suspend fun saveSettings(settings: AppSettings) {
         context.powerSettingsDataStore.edit { p ->
             p[Keys.MONITOR_ENABLED] = settings.monitorEnabled
@@ -80,18 +93,27 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    /**
+     * 单独更新是否开启前台服务（常驻通知）的设置。
+     */
     suspend fun setPersistentNotificationEnabled(enabled: Boolean) {
         context.powerSettingsDataStore.edit { p ->
             p[Keys.PERSISTENT_NOTIFICATION_ENABLED] = enabled
         }
     }
 
+    /**
+     * 标记当前已完成一次电池检查，更新检查时间戳。
+     */
     suspend fun markChecked(now: Long = System.currentTimeMillis()) {
         context.powerSettingsDataStore.edit { p ->
             p[Keys.LAST_CHECK_AT] = now
         }
     }
 
+    /**
+     * 更新上一次的电量状态（如果状态是充电中或已充满，则将其归一化为 NORMAL，避免逻辑混淆）。
+     */
     suspend fun updateLastState(state: BatteryLevelState) {
         val normalizedState = when (state) {
             BatteryLevelState.CHARGING,
@@ -103,6 +125,9 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    /**
+     * 更新电池运行时状态：是否已接通电源、是否已达到充满电状态。
+     */
     suspend fun updateBatteryRuntimeState(plugged: Boolean, fullChargeReached: Boolean) {
         context.powerSettingsDataStore.edit { p ->
             p[Keys.LAST_PLUGGED] = plugged
@@ -110,6 +135,10 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    /**
+     * 当触发相应状态的通知时，更新总体的上次通知时间戳以及该特定状态的上次通知时间戳。
+     * 此外，根据不同状态更新 lastState，以实现状态机流转。
+     */
     suspend fun updateNotifyState(state: BatteryLevelState, now: Long = System.currentTimeMillis()) {
         context.powerSettingsDataStore.edit { p ->
             p[Keys.LAST_NOTIFY_AT] = now
@@ -137,10 +166,16 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    /**
+     * 解析字符串形式的电池状态为枚举值，解析失败时返回默认的 NORMAL。
+     */
     private fun parseState(value: String): BatteryLevelState {
         return runCatching { BatteryLevelState.valueOf(value) }.getOrDefault(BatteryLevelState.NORMAL)
     }
 
+    /**
+     * DataStore 键定义对象，映射到对应的配置数据类型。
+     */
     private object Keys {
         val MONITOR_ENABLED = booleanPreferencesKey("monitor_enabled")
         val PERSISTENT_NOTIFICATION_ENABLED = booleanPreferencesKey("persistent_notification_enabled")
